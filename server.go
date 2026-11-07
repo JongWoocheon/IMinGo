@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 )
@@ -20,6 +21,8 @@ func NewServer(ip string, port int) *Server {
 }
 
 func (this *Server) Handler(conn net.Conn) {
+	defer conn.Close() // 处理结束时关闭连接，避免连接泄漏
+
 	fmt.Println("Connection successful")
 }
 
@@ -35,6 +38,9 @@ func (this *Server) Start() {
 	for {
 		conn, err := listener.Accept() // 阻塞，等待客户端连接
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return // 监听器已关闭，退出循环，避免空转
+			}
 			fmt.Println("listen.Accept err:", err)
 			continue
 		}
