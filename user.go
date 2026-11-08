@@ -24,8 +24,7 @@ func NewUser(conn net.Conn) *User {
 
 // 监听当前用户的 channel 方法
 func (this *User) ListenMessage() {
-	for {
-		msg := <-this.C
+	for msg := range this.C { // C 被 close 后循环自动结束
 		this.conn.Write([]byte(msg + "\n"))
 	}
 }
