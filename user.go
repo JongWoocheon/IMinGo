@@ -45,7 +45,22 @@ func (u *User) DoMessage(msg string) {
 	if msg == "" {
 		return
 	}
+	// "who"：查询当前在线用户，结果只发给自己，不广播
+	if msg == "who" {
+		u.server.mapLock.RLock()
+		for _, user := range u.server.OnlineMap {
+			onlineMsg := "[" + user.Addr + "] " + user.Name
+			u.SendMsg(onlineMsg)
+		}
+		u.server.mapLock.RUnlock()
+		return
+	}
 	u.server.Broadcast(u, msg)
+}
+
+// 只给当前用户发送消息
+func (u *User) SendMsg(msg string) {
+	u.C <- msg
 }
 
 // 监听当前用户的 channel 方法
