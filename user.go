@@ -1,6 +1,9 @@
 package main
 
-import "net"
+import (
+	"net"
+	"strings"
+)
 
 type User struct {
 	Name   string
@@ -55,7 +58,35 @@ func (u *User) DoMessage(msg string) {
 		u.server.mapLock.RUnlock()
 		return
 	}
+	// "rename|新名字"：修改用户名
+	if newName, ok := strings.CutPrefix(msg, "rename|"); ok {
+		u.Rename(strings.TrimSpace(newName))
+		return
+	}
 	u.server.Broadcast(u, msg)
+}
+
+// 修改用户名。检查重名、换 key、改 Name 必须在同一把写锁内完成，
+// 否则两个用户可能同时抢到同一个名字，或与其他 goroutine 并发读写 map 导致进程崩溃。
+// Notify 要放在解锁之后：Server.ListenMessage 投递消息时要拿读锁，持写锁发送可能死锁。
+func (u *User) Rename(newName string) {
+	if newName == "" {
+		u.SendMsg("Usage: rename|<new name>")
+		return
+	}
+	u.server.mapLock.Lock()
+	if _, ok := u.server.OnlineMap[newName]; ok {
+		u.server.mapLock.Unlock()
+		u.SendMsg("Name " + "\"" + newName + "\"" + " is already taken")
+		return
+	}
+	oldName := u.Name
+	delete(u.server.OnlineMap, oldName)
+	u.Name = newName
+	u.server.OnlineMap[newName] = u
+	u.server.mapLock.Unlock()
+
+	u.server.Notify(oldName + " renamed to " + newName)
 }
 
 // 只给当前用户发送消息
