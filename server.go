@@ -5,8 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"sync"
+	"time"
 )
+
+// 客户端连续这么久没有发送消息，就会被强制踢出
+const idleTimeout = 20 * time.Second
 
 type Server struct {
 	Ip   string
@@ -71,14 +76,23 @@ func (s *Server) Handler(conn net.Conn) {
 
 	user.Online()
 
+	// 每收到一条消息就重新计时，连续 idleTimeout 没有消息则读取超时，强制踢出
+	conn.SetReadDeadline(time.Now().Add(idleTimeout))
+
 	// 阻塞读取客户端消息，按行广播给所有在线用户
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		user.DoMessage(scanner.Text()) // 已去掉行尾的 \n 和 \r
+		conn.SetReadDeadline(time.Now().Add(idleTimeout)) // 收到消息，重新计时
+		user.DoMessage(scanner.Text())                    // 已去掉行尾的 \n 和 \r
 	}
-	// Scan 返回 false：客户端正常断开（EOF，Err 为 nil）或读取出错
+	// Scan 返回 false：客户端正常断开（EOF，Err 为 nil）、超时或读取出错
 	if err := scanner.Err(); err != nil {
-		fmt.Println("conn read err:", err)
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			// 直接写 conn：经 user.C 发送的话，可能还没写出连接就被 defer 关闭了
+			conn.Write([]byte("[System] You have been kicked: no message within " + idleTimeout.String() + "\n"))
+		} else {
+			fmt.Println("conn read err:", err)
+		}
 	}
 
 	user.Offline()
