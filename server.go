@@ -11,7 +11,7 @@ import (
 )
 
 // 客户端连续这么久没有发送消息，就会被强制踢出
-const idleTimeout = 20 * time.Second
+const idleTimeout = 60 * time.Second
 
 type Server struct {
 	Ip   string

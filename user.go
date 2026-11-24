@@ -63,7 +63,31 @@ func (u *User) DoMessage(msg string) {
 		u.Rename(strings.TrimSpace(newName))
 		return
 	}
+	// "to|用户名|消息"：私聊，只发给指定用户
+	if rest, ok := strings.CutPrefix(msg, "to|"); ok {
+		name, content, _ := strings.Cut(rest, "|")
+		u.PrivateChat(strings.TrimSpace(name), content)
+		return
+	}
 	u.server.Broadcast(u, msg)
+}
+
+// 私聊：把消息只发给名为 name 的在线用户。
+// 查找和发送都在读锁内完成：对方下线时 removeUser 要拿写锁，
+// 会等到发送结束才能删除并 close 对方的 C，因此不会向已关闭的 channel 发送。
+func (u *User) PrivateChat(name, content string) {
+	if name == "" || content == "" {
+		u.SendMsg("Usage: to|<name>|<message>")
+		return
+	}
+	u.server.mapLock.RLock()
+	defer u.server.mapLock.RUnlock()
+	target, ok := u.server.OnlineMap[name]
+	if !ok {
+		u.SendMsg("User " + "\"" + name + "\"" + " is not online")
+		return
+	}
+	target.SendMsg("[" + u.Addr + "] " + u.Name + " (private): " + content)
 }
 
 // 修改用户名。检查重名、换 key、改 Name 必须在同一把写锁内完成，
